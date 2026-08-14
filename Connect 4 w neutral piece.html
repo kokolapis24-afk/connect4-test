@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect 4 Pro - AI Variant</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --board: #16213e;
+            --slot: #0f3460;
+            --p1: #e94560;
+            --p2: #f9d371;
+            --neutral: #533483;
+            --text: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .header {
+            text-align: center;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 12px;
+        }
+
+        .control-item {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            gap: 4px;
+        }
+
+        select, button {
+            background: var(--slot);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover { background: #1a4a80; }
+        button:active { transform: scale(0.98); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .game-status {
+            font-size: 1.2rem;
+            font-weight: bold;
+            text-align: center;
+            height: 1.5em;
+            color: var(--p2);
+        }
+
+        .board-wrapper {
+            position: relative;
+            background: var(--board);
+            padding: 10px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            user-select: none;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .column:hover .slot.empty:first-child::after {
+            content: '↓';
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 20px;
+            opacity: 0.3;
+        }
+
+        .slot {
+            aspect-ratio: 1/1;
+            background: var(--slot);
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s ease;
+        }
+
+        .slot.p1 { background: var(--p1); box-shadow: inset 0 0 15px rgba(0,0,0,0.3); }
+        .slot.p2 { background: var(--p2); box-shadow: inset 0 0 15px rgba(0,0,0,0.3); }
+        .slot.neutral { background: var(--neutral); }
+        .slot.winning { outline: 4px solid white; outline-offset: -4px; z-index: 2; }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2 style="margin:0">Connect 4 Pro</h2>
+    </div>
+
+    <div class="controls">
+        <div class="control-item">
+            <label>Mode</label>
+            <select id="gameMode">
+                <option value="H-A">Human vs AI</option>
+                <option value="A-H">AI vs Human</option>
+            </select>
+        </div>
+        <div class="control-item">
+            <label>Neutral Pair</label>
+            <select id="neutralPair">
+                <option value="none">None</option>
+                <option value="1-7">1 & 7</option>
+                <option value="2-6">2 & 6</option>
+                <option value="3-5">3 & 5</option>
+            </select>
+        </div>
+        <div class="control-item">
+            <label>Difficulty</label>
+            <select id="difficulty">
+                <option value="2">Easy (2)</option>
+                <option value="4">Medium (4)</option>
+                <option value="6">Hard (6)</option>
+                <option value="8" selected>Perfect (8)</option>
+            </select>
+        </div>
+        <div class="control-item">
+            <label>&nbsp;</label>
+            <button onclick="resetGame()">New Game</button>
+        </div>
+    </div>
+
+    <div class="game-status" id="status">Your Turn</div>
+
+    <div class="board-wrapper">
+        <div class="board" id="board"></div>
+    </div>
+
+    <div class="btn-row">
+        <button onclick="undo()" id="undoBtn">Undo Move</button>
+    </div>
+
+    <div class="legend">
+        <span><i class="dot" style="background:var(--p1)"></i> Red (P1)</span>
+        <span><i class="dot" style="background:var(--p2)"></i> Yellow (P2)</span>
+        <span><i class="dot" style="background:var(--neutral)"></i> Neutral</span>
+    </div>
+</div>
+
+<script>
+    const ROWS = 6;
+    const COLS = 7;
+    const EMPTY = 0;
+    const P1 = 1;
+    const P2 = 2;
+    const NEUTRAL = 3;
+
+    let board = [];
+    let currentPlayer = P1;
+    let history = [];
+    let gameOver = false;
+    let isThinking = false;
+
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const undoBtn = document.getElementById('undoBtn');
+
+    function createBoard() {
+        board = Array(ROWS).fill().map(() => Array(COLS).fill(EMPTY));
+        
+        // Add Neutrals
+        const pair = document.getElementById('neutralPair').value;
+        if (pair === '1-7') { board[ROWS-1][0] = NEUTRAL; board[ROWS-1][6] = NEUTRAL; }
+        if (pair === '2-6') { board[ROWS-1][1] = NEUTRAL; board[ROWS-1][5] = NEUTRAL; }
+        if (pair === '3-5') { board[ROWS-1][2] = NEUTRAL; board[ROWS-1][4] = NEUTRAL; }
+
+        render();
+    }
+
+    function render() {
+        boardEl.innerHTML = '';
+        for (let c = 0; c < COLS; c++) {
+            const colDiv = document.createElement('div');
+            colDiv.className = 'column';
+            colDiv.onclick = () => handleMove(c);
+            for (let r = 0; r < ROWS; r++) {
+                const slot = document.createElement('div');
+                slot.className = 'slot';
+                if (board[r][c] === P1) slot.classList.add('p1');
+                if (board[r][c] === P2) slot.classList.add('p2');
+                if (board[r][c] === NEUTRAL) slot.classList.add('neutral');
+                colDiv.appendChild(slot);
+            }
+            boardEl.appendChild(colDiv);
+        }
+        undoBtn.disabled = history.length === 0 || isThinking;
+    }
+
+    async function handleMove(col) {
+        if (gameOver || isThinking) return;
+        
+        const mode = document.getElementById('gameMode').value;
+        const aiPlayer = mode === 'H-A' ? P2 : P1;
+        const humanPlayer = mode === 'H-A' ? P1 : P2;
+
+        if (currentPlayer !== humanPlayer) return;
+
+        if (placePiece(col, humanPlayer)) {
+            checkGameState();
+            if (!gameOver) {
+                currentPlayer = aiPlayer;
+                updateStatus();
+                await aiTurn();
+            }
+        }
+    }
+
+    function placePiece(col, player) {
+        for (let r = ROWS - 1; r >= 0; r--) {
+            if (board[r][col] === EMPTY) {
+                saveHistory();
+                board[r][col] = player;
+                render();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function saveHistory() {
+        history.push(board.map(row => [...row]));
+    }
+
+    function undo() {
+        if (history.length > 0) {
+            // Undo 2 moves if playing against AI
+            board = history.pop();
+            if (history.length > 0) board = history.pop();
+            gameOver = false;
+            currentPlayer = document.getElementById('gameMode').value === 'H-A' ? P1 : P1;
+            render();
+            updateStatus();
+        }
+    }
+
+    function checkGameState() {
+        const win = checkWin(board);
+        if (win) {
+            gameOver = true;
+            statusEl.innerText = (win.player === P1 ? "Red" : "Yellow") + " Wins! 🏆";
+            highlightWin(win.coords);
+            return;
+        }
+        if (board.every(r => r.every(c => c !== EMPTY))) {
+            gameOver = true;
+            statusEl.innerText = "It's a Draw! 🤝";
+        }
+    }
+
+    function highlightWin(coords) {
+        const columns = document.querySelectorAll('.column');
+        coords.forEach(([r, c]) => {
+            columns[c].children[r].classList.add('winning');
+        });
+    }
+
+    function updateStatus() {
+        if (gameOver) return;
+        const mode = document.getElementById('gameMode').value;
+        const humanPlayer = mode === 'H-A' ? P1 : P2;
+        statusEl.innerText = (currentPlayer === humanPlayer) ? "Your Turn" : "AI is calculating...";
+        statusEl.style.color = (currentPlayer === P1) ? 'var(--p1)' : 'var(--p2)';
+    }
+
+    async function aiTurn() {
+        isThinking = true;
+        updateStatus();
+        
+        // Artificial delay for realism
+        await new Promise(r => setTimeout(r, 600));
+
+        const depth = parseInt(document.getElementById('difficulty').value);
+        const bestCol = getBestMove(board, currentPlayer, depth);
+        
+        placePiece(bestCol, currentPlayer);
+        checkGameState();
+        
+        if (!gameOver) {
+            currentPlayer = (currentPlayer === P1) ? P2 : P1;
+            updateStatus();
+        }
+        isThinking = false;
+        render();
+    }
+
+    function resetGame() {
+        history = [];
+        gameOver = false;
+        isThinking = false;
+        createBoard();
+        const mode = document.getElementById('gameMode').value;
+        currentPlayer = P1;
+        updateStatus();
+        
+        if (mode === 'A-H') {
+            aiTurn();
+        }
+    }
+
+    // --- AI LOGIC (MINIMAX WITH ALPHA-BETA) ---
+
+    function getBestMove(b, player, depth) {
+        let bestScore = -Infinity;
+        let moves = [];
+        const opponent = (player === P1) ? P2 : P1;
+
+        // Column ordering heuristic: center columns first
+        const order = [3, 2, 4, 1, 5, 0, 6];
+
+        for (let c of order) {
+            let r = getRow(b, c);
+            if (r !== -1) {
+                b[r][c] = player;
+                let score = minimax(b, depth - 1, false, -Infinity, Infinity, player, opponent);
+                b[r][c] = EMPTY;
+                
+                if (score > bestScore) {
+                    bestScore = score;
+                    moves = [c];
+                } else if (score === bestScore) {
+                    moves.push(c);
+                }
+            }
+        }
+        return moves[Math.floor(Math.random() * moves.length)];
+    }
+
+    function minimax(b, depth, isMaximizing, alpha, beta, ai, human) {
+        const win = checkWin(b);
+        if (win) return win.player === ai ? (1000 + depth) : (-1000 - depth);
+        if (depth === 0) return evaluateBoard(b, ai, human);
+        if (b.every(r => r.every(c => c !== EMPTY))) return 0;
+
+        const order = [3, 2, 4, 1, 5, 0, 6];
+
+        if (isMaximizing) {
+            let maxScore = -Infinity;
+            for (let c of order) {
+                let r = getRow(b, c);
+                if (r !== -1) {
+                    b[r][c] = ai;
+                    let score = minimax(b, depth - 1, false, alpha, beta, ai, human);
+                    b[r][c] = EMPTY;
+                    maxScore = Math.max(maxScore, score);
+                    alpha = Math.max(alpha, score);
+                    if (beta <= alpha) break;
+                }
+            }
+            return maxScore;
+        } else {
+            let minScore = Infinity;
+            for (let c of order) {
+                let r = getRow(b, c);
+                if (r !== -1) {
+                    b[r][c] = human;
+                    let score = minimax(b, depth - 1, true, alpha, beta, ai, human);
+                    b[r][c] = EMPTY;
+                    minScore = Math.min(minScore, score);
+                    beta = Math.min(beta, score);
+                    if (beta <= alpha) break;
+                }
+            }
+            return minScore;
+        }
+    }
+
+    function getRow(b, col) {
+        for (let r = ROWS - 1; r >= 0; r--) {
+            if (b[r][col] === EMPTY) return r;
+        }
+        return -1;
+    }
+
+    function evaluateBoard(b, ai, human) {
+        let score = 0;
+        // Favor center
+        for (let r = 0; r < ROWS; r++) if (b[r][3] === ai) score += 3;
+
+        const checkSeq = (r, c, dr, dc) => {
+            let aiC = 0, humC = 0, neutC = 0;
+            for (let i = 0; i < 4; i++) {
+                let val = b[r + i * dr][c + i * dc];
+                if (val === ai) aiC++;
+                else if (val === human) humC++;
+                else if (val === NEUTRAL) neutC++;
+            }
+            if (neutC > 0) return 0; // Neutral blocks any win
+            if (aiC === 3 && humC === 0) return 10;
+            if (aiC === 2 && humC === 0) return 2;
+            if (humC === 3 && aiC === 0) return -8; // Strongly discourage letting human get 3
+            return 0;
+        };
+
+        // Horizontal
+        for (let r = 0; r < ROWS; r++) 
+            for (let c = 0; c < COLS - 3; c++) score += checkSeq(r, c, 0, 1);
+        // Vertical
+        for (let c = 0; c < COLS; c++) 
+            for (let r = 0; r < ROWS - 3; r++) score += checkSeq(r, c, 1, 0);
+        // Diagonals
+        for (let r = 0; r < ROWS - 3; r++) {
+            for (let c = 0; c < COLS - 3; c++) {
+                score += checkSeq(r, c, 1, 1);
+                score += checkSeq(r + 3, c, -1, 1);
+            }
+        }
+        return score;
+    }
+
+    function checkWin(b) {
+        // Horizontal
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS - 3; c++) {
+                let p = b[r][c];
+                if (p !== EMPTY && p !== NEUTRAL && p === b[r][c+1] && p === b[r][c+2] && p === b[r][c+3])
+                    return {player: p, coords: [[r,c], [r,c+1], [r,c+2], [r,c+3]]};
+            }
+        }
+        // Vertical
+        for (let c = 0; c < COLS; c++) {
+            for (let r = 0; r < ROWS - 3; r++) {
+                let p = b[r][c];
+                if (p !== EMPTY && p !== NEUTRAL && p === b[r+1][c] && p === b[r+2][c] && p === b[r+3][c])
+                    return {player: p, coords: [[r,c], [r+1,c], [r+2,c], [r+3,c]]};
+            }
+        }
+        // Diagonal /
+        for (let r = 3; r < ROWS; r++) {
+            for (let c = 0; c < COLS - 3; c++) {
+                let p = b[r][c];
+                if (p !== EMPTY && p !== NEUTRAL && p === b[r-1][c+1] && p === b[r-2][c+2] && p === b[r-3][c+3])
+                    return {player: p, coords: [[r,c], [r-1,c+1], [r-2,c+2], [r-3,c+3]]};
+            }
+        }
+        // Diagonal \
+        for (let r = 0; r < ROWS - 3; r++) {
+            for (let c = 0; c < COLS - 3; c++) {
+                let p = b[r][c];
+                if (p !== EMPTY && p !== NEUTRAL && p === b[r+1][c+1] && p === b[r+2][c+2] && p === b[r+3][c+3])
+                    return {player: p, coords: [[r,c], [r+1,c+1], [r+2,c+2], [r+3,c+3]]};
+            }
+        }
+        return null;
+    }
+
+    // Init
+    createBoard();
+    updateStatus();
+    
+    // Auto-restart on setting changes
+    document.querySelectorAll('select').forEach(el => el.onchange = resetGame);
+</script>
+
+</body>
+</html>
